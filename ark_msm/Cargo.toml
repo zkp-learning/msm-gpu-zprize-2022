@@ -1,0 +1,10 @@
+[package]
+name = "ark_msm"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ark-bls12-381 = "0.4"
+ark-std = "0.4"
+ark-ec = "0.4"
+ark-ff = "0.4"
