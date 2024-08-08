@@ -1,8 +1,9 @@
 use ark_bls12_381::{Fr, G1Affine, G1Projective};
 use ark_ec::scalar_mul::variable_base::VariableBaseMSM;
 use ark_ec::AffineRepr;
-use ark_ec::CurveGroup;
+use ark_ec::Group;
 use ark_ff::BigInteger;
+use ark_std::iterable::Iterable;
 use ark_std::UniformRand;
 use ark_std::Zero;
 use std::ops::Mul;
@@ -22,19 +23,22 @@ fn main() {
     println!("generate_random_fr executed in: {:?}", duration_fr);
 
     let start = Instant::now();
-    let result = G1Projective::msm(&base, &fr).unwrap();
+    let result_ark = G1Projective::msm(&base, &fr).unwrap();
     let duration_msm = start.elapsed();
-    println!("msm executed in: {:?}", duration_msm);
+    println!("ark msm executed in: {:?}", duration_msm);
 
-    println!("total time: {:?}", duration + duration_fr + duration_msm);
-    println!("result: {:#}", result.into_affine());
+    let start = Instant::now();
+    let result_naive = naive_msm(&base, &fr);
+    let duration_msm = start.elapsed();
+    println!("naive msm executed in: {:?}", duration_msm);
 
-    // let start = Instant::now();
-    // let result = naive_msm(&base, &fr);
-    // let duration_msm = start.elapsed();
-    // println!("msm executed in: {:?}", duration_msm);
-    println!("result: {:#}", result.into_affine());
-    println!("fr[0]: {:?}", fr_to_bits(fr[0]));
+    let start = Instant::now();
+    let result_bit = msm(&base, &fr);
+    let duration_msm = start.elapsed();
+    println!("bit-op msm executed in: {:?}", duration_msm);
+
+    assert_eq!(result_ark, result_naive);
+    assert_eq!(result_ark, result_bit);
 }
 
 fn generate_base() -> [G1Affine; N] {
@@ -64,30 +68,31 @@ fn naive_msm(base: &[G1Affine; N], fr: &[Fr; N]) -> G1Projective {
 }
 
 fn msm(base: &[G1Affine; N], fr: &[Fr; N]) -> G1Projective {
-    for i in base {
-        let base_item = [G1Affine::zero(); 256];
+    let mut res = G1Projective::zero();
+
+    for (base, fr) in base.iter().zip(fr) {
+        let mut base_item = G1Projective::from(base);
+        let fr_item = fr_to_bits(fr);
+
+        for i in 0..256 {
+            if fr_item[i] {
+                res += base_item;
+            }
+            base_item.double_in_place();
+        }
     }
     G1Projective::msm(base, fr).unwrap()
 }
 
-fn fr_to_bits(fr: Fr) -> [bool; 256] {
+fn fr_to_bits(fr: &Fr) -> [bool; 256] {
     let mut bits = vec![];
     let bytes = fr.0.to_bytes_be();
 
     for byte in bytes.iter() {
         for i in 0..8 {
             let bit = (byte >> i) & 1 == 1;
-            println!("{}", bit);
             bits.push(bit);
         }
     }
     bits.try_into().unwrap()
-}
-
-fn fr_to_hex(fr: Fr) -> String {
-    let bytes = fr.0.to_bytes_be();
-    bytes
-        .iter()
-        .map(|byte| format!("{:02x}", byte))
-        .collect::<String>()
 }
