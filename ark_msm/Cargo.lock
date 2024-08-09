@@ -143,6 +143,7 @@ dependencies = [
  "ark-ec",
  "ark-ff",
  "ark-std",
+ "rayon",
 ]
 
 [[package]]
