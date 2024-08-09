@@ -5,8 +5,8 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 
 use ark_bls12_377::G1Affine;
-use fpga_msm::{multi_scalar_mult, multi_scalar_mult_init};
 use rand::{prelude::StdRng, RngCore, SeedableRng};
+use yrrid_2022::{multi_scalar_mult, multi_scalar_mult_init};
 
 use std::str::FromStr;
 
@@ -24,7 +24,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     let batches = 4;
     let (points, scalars, _results) =
-        fpga_msm::gen::generate::<G1Affine>(rng, 1 << npoints_npow, batches);
+        yrrid_2022::gen::generate::<G1Affine>(rng, 1 << npoints_npow, batches);
 
     let mut context = multi_scalar_mult_init(points.as_slice());
 
@@ -34,8 +34,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let name = format!("2**{}x{}", npoints_npow, batches);
     group.bench_function(name, |b| {
         b.iter(|| {
-            let _ = multi_scalar_mult(&mut context, &points.as_slice(),
-                &scalars);
+            let _ = multi_scalar_mult(&mut context, &points.as_slice(), &scalars);
         })
     });
 

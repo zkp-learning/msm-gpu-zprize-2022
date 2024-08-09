@@ -1,11 +1,11 @@
 use ark_bls12_381::{Fr, G1Affine, G1Projective};
 use ark_ec::scalar_mul::variable_base::VariableBaseMSM;
-use ark_ec::AffineRepr;
 use ark_ec::Group;
 use ark_ff::BigInteger;
-use ark_std::iterable::Iterable;
+use ark_ff::PrimeField;
 use ark_std::UniformRand;
 use ark_std::Zero;
+use rayon::prelude::*;
 use std::env;
 use std::io::{BufReader, BufWriter};
 use std::ops::Mul;
@@ -103,57 +103,74 @@ fn main() {
 }
 
 fn generate_base() -> Vec<G1Affine> {
-    let mut rng = ark_std::test_rng();
-    let mut base = [G1Affine::zero(); N];
-    for i in 0..N {
-        base[i] = G1Affine::rand(&mut rng);
-    }
-    base
+    let mut res = Vec::with_capacity(N);
+    (0..N)
+        .into_par_iter()
+        .map(|_| {
+            let mut rng = ark_std::test_rng();
+
+            G1Affine::rand(&mut rng)
+        })
+        .collect_into_vec(&mut res);
+    res
 }
 
 fn generate_random_fr() -> Vec<Fr> {
     let mut rng = ark_std::test_rng();
-    let mut random_fr = [Fr::zero(); N];
-    for i in 0..N {
-        random_fr[i] = Fr::rand(&mut rng);
+    let mut random_fr = Vec::with_capacity(N);
+    for _ in 0..N {
+        random_fr.push(Fr::rand(&mut rng));
     }
     random_fr
 }
 
 fn naive_msm(base: &[G1Affine], fr: &[Fr]) -> G1Projective {
-    let mut result = G1Projective::zero();
-    for i in 0..N {
-        result += &base[i].mul(fr[i]);
-    }
-    result
+    base.par_iter().enumerate().map(|(i, b)| b.mul(fr[i])).sum()
 }
 
-fn msm(base: &[G1Affine], fr: &[Fr]) -> G1Projective {
-    let mut res = G1Projective::zero();
+fn msm(bases: &[G1Affine], fr: &[Fr]) -> G1Projective {
+    bases
+        .par_iter()
+        .enumerate()
+        .map(|(i, base)| {
+            let mut base_item = G1Projective::from(*base);
+            let mut sum = G1Projective::zero();
+            let fr_item = fr_to_bits(&fr[i]);
 
-    for (base, fr) in base.iter().zip(fr) {
-        let mut base_item = G1Projective::from(base);
-        let fr_item = fr_to_bits(fr);
-
-        for i in 0..256 {
-            if fr_item[i] {
-                res += base_item;
+            for i in 0..256 {
+                if fr_item[i] {
+                    sum += base_item;
+                }
+                base_item.double_in_place();
             }
-            base_item.double_in_place();
-        }
-    }
-    G1Projective::msm(base, fr).unwrap()
+            sum
+        })
+        .sum()
 }
 
 fn fr_to_bits(fr: &Fr) -> Vec<bool> {
-    let mut bits = vec![];
-    let bytes = fr.0.to_bytes_be();
+    let mut bits = Vec::with_capacity(256);
+    let bytes = fr.into_bigint().to_bytes_le();
 
     for byte in bytes.iter() {
         for i in 0..8 {
-            let bit = (byte >> i) & 1 == 1;
+            let bit = ((byte >> i) & 1) == 1;
             bits.push(bit);
         }
     }
-    bits.try_into().unwrap()
+    bits
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_fr_to_bits() {
+        let fr = Fr::from(8u64);
+
+        let bits = fr_to_bits(&fr);
+
+        println!("{:?}", bits);
+    }
 }
