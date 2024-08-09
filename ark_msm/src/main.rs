@@ -17,7 +17,7 @@ use tracing::{span, Level};
 use tracing_flame::FlameLayer;
 use tracing_subscriber::{fmt, prelude::*, registry::Registry};
 
-const N: usize = 16384;
+const N: usize = 1 << 20;
 static PATH: &str = "flame.folded";
 
 fn setup_global_collector(dir: &Path) -> impl Drop {
@@ -44,6 +44,34 @@ fn make_flamegraph(tmpdir: &Path, out: &Path) {
     inferno::flamegraph::from_reader(&mut opts, reader, writer).unwrap();
 }
 fn main() {
+    let start = Instant::now();
+    let base = generate_base();
+    let duration = start.elapsed();
+    println!("generate_base executed in: {:?}", duration);
+
+    let start = Instant::now();
+    let fr = generate_random_fr();
+    let duration_fr = start.elapsed();
+    println!("generate_random_fr executed in: {:?}", duration_fr);
+
+    let start = Instant::now();
+    let result_ark = G1Projective::msm(&base, &fr).unwrap();
+    let duration_msm = start.elapsed();
+    println!("ark msm executed in: {:?}", duration_msm);
+
+    let start = Instant::now();
+    let result_naive = naive_msm(&base, &fr);
+    let duration_msm = start.elapsed();
+    println!("naive msm executed in: {:?}", duration_msm);
+
+    let start = Instant::now();
+    let result_bit = msm(&base, &fr);
+    let duration_msm = start.elapsed();
+    println!("bit-op msm executed in: {:?}", duration_msm);
+
+    assert_eq!(result_ark, result_naive);
+    assert_eq!(result_ark, result_bit);
+
     let out = if let Some(arg) = env::args().nth(1) {
         PathBuf::from(arg)
     } else {
@@ -58,39 +86,15 @@ fn main() {
         .expect("failed to create temporary directory");
     let guard = setup_global_collector(tmp_dir.path());
 
-    span!(Level::INFO, "outer").in_scope(|| {
-        let start = Instant::now();
-        let base = generate_base();
-        let duration = start.elapsed();
-        println!("generate_base executed in: {:?}", duration);
+    // span!(Level::INFO, "outer").in_scope(|| {
 
-        let start = Instant::now();
-        let fr = generate_random_fr();
-        let duration_fr = start.elapsed();
-        println!("generate_random_fr executed in: {:?}", duration_fr);
+    //     span!(Level::INFO, "Inner").in_scope(|| {
 
-        span!(Level::INFO, "Inner").in_scope(|| {
-            let start = Instant::now();
-            let result_ark = G1Projective::msm(&base, &fr).unwrap();
-            let duration_msm = start.elapsed();
-            println!("ark msm executed in: {:?}", duration_msm);
+    //         span!(Level::INFO, "Innermost").in_scope(|| {
 
-            span!(Level::INFO, "Innermost").in_scope(|| {
-                let start = Instant::now();
-                let result_naive = naive_msm(&base, &fr);
-                let duration_msm = start.elapsed();
-                println!("naive msm executed in: {:?}", duration_msm);
-
-                let start = Instant::now();
-                let result_bit = msm(&base, &fr);
-                let duration_msm = start.elapsed();
-                println!("bit-op msm executed in: {:?}", duration_msm);
-
-                assert_eq!(result_ark, result_naive);
-                assert_eq!(result_ark, result_bit);
-            });
-        });
-    });
+    //         });
+    //     });
+    // });
 
     // drop the guard to make sure the layer flushes its output then read the
     // output to create the flamegraph
@@ -98,7 +102,7 @@ fn main() {
     make_flamegraph(tmp_dir.path(), out.as_ref());
 }
 
-fn generate_base() -> [G1Affine; N] {
+fn generate_base() -> Vec<G1Affine> {
     let mut rng = ark_std::test_rng();
     let mut base = [G1Affine::zero(); N];
     for i in 0..N {
@@ -107,7 +111,7 @@ fn generate_base() -> [G1Affine; N] {
     base
 }
 
-fn generate_random_fr() -> [Fr; N] {
+fn generate_random_fr() -> Vec<Fr> {
     let mut rng = ark_std::test_rng();
     let mut random_fr = [Fr::zero(); N];
     for i in 0..N {
@@ -116,7 +120,7 @@ fn generate_random_fr() -> [Fr; N] {
     random_fr
 }
 
-fn naive_msm(base: &[G1Affine; N], fr: &[Fr; N]) -> G1Projective {
+fn naive_msm(base: &[G1Affine], fr: &[Fr]) -> G1Projective {
     let mut result = G1Projective::zero();
     for i in 0..N {
         result += &base[i].mul(fr[i]);
@@ -124,7 +128,7 @@ fn naive_msm(base: &[G1Affine; N], fr: &[Fr; N]) -> G1Projective {
     result
 }
 
-fn msm(base: &[G1Affine; N], fr: &[Fr; N]) -> G1Projective {
+fn msm(base: &[G1Affine], fr: &[Fr]) -> G1Projective {
     let mut res = G1Projective::zero();
 
     for (base, fr) in base.iter().zip(fr) {
@@ -141,7 +145,7 @@ fn msm(base: &[G1Affine; N], fr: &[Fr; N]) -> G1Projective {
     G1Projective::msm(base, fr).unwrap()
 }
 
-fn fr_to_bits(fr: &Fr) -> [bool; 256] {
+fn fr_to_bits(fr: &Fr) -> Vec<bool> {
     let mut bits = vec![];
     let bytes = fr.0.to_bytes_be();
 
