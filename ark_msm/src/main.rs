@@ -6,45 +6,13 @@ use ark_ff::PrimeField;
 use ark_std::UniformRand;
 use ark_std::Zero;
 use rayon::prelude::*;
-use std::env;
-use std::io::{BufReader, BufWriter};
 use std::ops::Mul;
-use std::path::{Path, PathBuf};
-use std::thread::sleep;
-use std::time::{Duration, Instant};
-use std::{convert::TryInto, fs::File};
-use tracing::{span, Level};
-use tracing_flame::FlameLayer;
-use tracing_subscriber::{fmt, prelude::*, registry::Registry};
+use std::time::Instant;
 
 pub mod pippenger;
 
 const N: usize = 1 << 19;
-static PATH: &str = "flame.folded";
 
-fn setup_global_collector(dir: &Path) -> impl Drop {
-    let fmt_layer = fmt::Layer::default();
-
-    let (flame_layer, _guard) = FlameLayer::with_file(dir.join(PATH)).unwrap();
-
-    tracing_subscriber::registry()
-        .with(fmt_layer)
-        .with(flame_layer)
-        .init();
-    _guard
-}
-
-fn make_flamegraph(tmpdir: &Path, out: &Path) {
-    println!("outputting flamegraph to {}", out.display());
-    let inf = File::open(tmpdir.join(PATH)).unwrap();
-    let reader = BufReader::new(inf);
-
-    let out = File::create(out).unwrap();
-    let writer = BufWriter::new(out);
-
-    let mut opts = inferno::flamegraph::Options::default();
-    inferno::flamegraph::from_reader(&mut opts, reader, writer).unwrap();
-}
 fn main() {
     let start = Instant::now();
     let base = generate_base();
@@ -67,41 +35,12 @@ fn main() {
     println!("naive msm executed in: {:?}", duration_msm);
 
     let start = Instant::now();
-    let result_bit = msm(&base, &fr);
+    let result_bit = binary_msm(&base, &fr);
     let duration_msm = start.elapsed();
     println!("bit-op msm executed in: {:?}", duration_msm);
 
     assert_eq!(result_ark, result_naive);
     assert_eq!(result_ark, result_bit);
-
-    let out = if let Some(arg) = env::args().nth(1) {
-        PathBuf::from(arg)
-    } else {
-        let mut path = env::current_dir().expect("failed to read current directory");
-        path.push("tracing-flame-inferno.svg");
-        path
-    };
-
-    let tmp_dir = tempfile::Builder::new()
-        .prefix("flamegraphs")
-        .tempdir()
-        .expect("failed to create temporary directory");
-    let guard = setup_global_collector(tmp_dir.path());
-
-    // span!(Level::INFO, "outer").in_scope(|| {
-
-    //     span!(Level::INFO, "Inner").in_scope(|| {
-
-    //         span!(Level::INFO, "Innermost").in_scope(|| {
-
-    //         });
-    //     });
-    // });
-
-    // drop the guard to make sure the layer flushes its output then read the
-    // output to create the flamegraph
-    drop(guard);
-    make_flamegraph(tmp_dir.path(), out.as_ref());
 }
 
 fn generate_base() -> Vec<G1Affine> {
@@ -130,7 +69,7 @@ fn naive_msm(base: &[G1Affine], fr: &[Fr]) -> G1Projective {
     base.par_iter().enumerate().map(|(i, b)| b.mul(fr[i])).sum()
 }
 
-fn msm(bases: &[G1Affine], fr: &[Fr]) -> G1Projective {
+fn binary_msm(bases: &[G1Affine], fr: &[Fr]) -> G1Projective {
     bases
         .par_iter()
         .enumerate()
