@@ -17,7 +17,9 @@ use tracing::{span, Level};
 use tracing_flame::FlameLayer;
 use tracing_subscriber::{fmt, prelude::*, registry::Registry};
 
-const N: usize = 1 << 20;
+pub mod pippenger;
+
+const N: usize = 1 << 19;
 static PATH: &str = "flame.folded";
 
 fn setup_global_collector(dir: &Path) -> impl Drop {
@@ -148,7 +150,7 @@ fn msm(bases: &[G1Affine], fr: &[Fr]) -> G1Projective {
         .sum()
 }
 
-fn fr_to_bits(fr: &Fr) -> Vec<bool> {
+pub fn fr_to_bits(fr: &Fr) -> Vec<bool> {
     let mut bits = Vec::with_capacity(256);
     let bytes = fr.into_bigint().to_bytes_le();
 
